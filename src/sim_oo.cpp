@@ -474,283 +474,101 @@ List simOO(S4 x) {
     return l;
 }
 
-// // [[Rcpp::export]]
-// Rcpp::List simOO(Rcpp::List x) {
-//     // extract elements of `x`
-//     IntegerVector loca = x[0];
-//     NumericVector meta = x[1];
-//     NumericVector p = x[2];
-//     IntegerVector init = clone(loca);
-//
-//     // create a counter for number of spp
-//     int maxS = meta.size();
-//
-//     // output list
-//     Rcpp::List out;
-//     out = Rcpp::List::create(Rcpp::Named("init") = init,
-//                              Rcpp::Named("final") = loca);
-//
-//     // setup random number generator
-//     std::mt19937 rng;
-//     rng.seed(std::random_device{}());
-//     std::uniform_real_distribution<> dist(0.0, 1.0);
-//
-//
-//     // setup the variables for the loop
-//     IntegerVector ii = Rcpp::seq(0, loca.size() - 1); // local comm indexes
-//     IntegerVector jj = Rcpp::seq(0, meta.size() - 1); // meta comm indexes
-//     int idead; // index of the individual that dies
-//     int iborn; // index of local individual giving birth
-//     int inew; // species ID of individual that replaces dead one
-//     double r; // a random number used to determine if imm or birth happens
-//     double d; // a random number used to determine if specaition happens
-//
-//     // run the sim
-//     for (int i = 0; i < p[2]; i++) {
-//         // death
-//         idead = sample(ii, 1)[0];
-//
-//         // immigration or local birth
-//         r = dist(rng);
-//
-//         if (r < p[0]) {
-//             // immigration
-//             inew = sample(jj, 1, false, meta)[0];
-//         } else {
-//             // local birth
-//             iborn = sample(ii, 1)[0];
-//             inew = loca[iborn];
-//         }
-//
-//         // speciation?
-//         d = dist(rng);
-//
-//         if (d < p[1]) {
-//             maxS++;
-//             inew = maxS;
-//         }
-//
-//         // update local
-//         loca[idead] = inew;
-//     }
-//
-//     return out;
-// }
-//
-//
+
+// classes to try to understand updating and behavior of pointers for use in
+// speciation methods
+
+// a class where the matrix updates are all internal
+class allIn {
+private:
+    imat edge;
+    int sMax;
+
+public:
+    allIn(imat edge, int sMax) : edge(edge), sMax(sMax) {}
+
+    void speciation() {
+        uvec i = find(edge.col(1) < sMax) + edge.n_rows;
+        edge(i) += 100;
+
+        sMax++;
+    }
+
+    IntegerMatrix getEdge() {
+        return wrap(edge);
+    }
+
+    int getS() {
+        return sMax;
+    }
+};
 
 
 
+// [[Rcpp::export]]
+List testAllIn(S4 x) {
+    x = clone(x);
+
+    imat e = as<imat>(x.slot("e"));
+    int s = as<int>(x.slot("n"));
+
+    allIn obj = allIn(e, s);
+
+    obj.speciation();
+
+    List l = List::create(Named("e") = obj.getEdge(),
+                          Named("s") = obj.getS());
+
+    return l;
+}
+
+// a class where the matrix updates are done by an external function that
+// gets passed arguments by referece
+
+void specFun(imat& edge, int& sMax) {
+    uvec i = find(edge.col(1) < sMax) + edge.n_rows;
+    edge(i) += 100;
+
+    sMax++;
+}
+
+
+class allOut {
+private:
+    imat edge;
+    int sMax;
+
+public:
+    allOut(imat edge, int sMax) : edge(edge), sMax(sMax) {}
+
+    void speciation() {
+        specFun(edge, sMax);
+    }
+
+    IntegerMatrix getEdge() {
+        return wrap(edge);
+    }
+
+    int getS() {
+        return sMax;
+    }
+};
 
 
 
-// method to set everything up
-// NOTE!!!! maybe not needed now!!!!!
-// void init(S4 x) {
-//     // extract the local comm and local comm info
-//     S4 localComm = x.slot("localComm");
-//     IntegerVector localSpp = localComm.slot("spp");
-//     mat localTrt = as<mat>(localComm.slot("trt"));
-//
-//     // extract the meta comm and meta comm info
-//     S4 metaComm = x.slot("metaComm");
-//     NumericVector metaAbund = metaComm.slot("abund");
-//     NumericMatrix metaTrt = metaComm.slot("trt");
-//     int sMax = metaAbund.size();
-//
-//     // extract phylo and phylo info
-//     S4 phylo = x.slot("phylo");
-//     IntegerMatrix edge = phylo.slot("e");
-//     NumericVector edgeLength = phylo.slot("l");
-//     LogicalVector alive = phylo.slot("alive");
-//
-//
-//     // extract params
-//     List params = x.slot("params"); // might be a list or S4
-//     double sigC = as<double>(params["sigC"]);
-//     double sigE = as<double>(params["sigE"]);
-//     mat envOptim = as<mat>(params["envOptim"]);
-//
-//
-//     // calculate compMat
-//     mat compMat = compMatCalc(localTrt, sigC);
-//
-//     // calculate envDist
-//     vec envDist = envDistCalc(localTrt, envOptim, sigE);
-// }
+// [[Rcpp::export]]
+List testAllOut(S4 x) {
+    x = clone(x);
 
+    imat e = as<imat>(x.slot("e"));
+    int s = as<int>(x.slot("n"));
 
+    allOut obj = allOut(e, s);
 
+    obj.speciation();
 
+    List l = List::create(Named("e") = obj.getEdge(),
+                          Named("s") = obj.getS());
 
-
-// class MyClass {
-// private:
-//     arma::mat x;
-//     arma::mat m;
-//
-//     arma::mat makeM(arma::mat x) {
-//         // make a matrix to hold distances
-//         int n = x.n_rows;
-//         mat D(n, n);
-//         D.fill(0.0);
-//         double d;
-//
-//         // loop over rows and cols to get distances with `norm` function
-//         for (int i = 0; i < n; i++) {
-//             for (int j = i + 1; j < n; j++) {
-//                 D(i, j) = norm(x.row(i) - x.row(j));
-//                 D(j, i) = D(i, j);
-//             }
-//         }
-//
-//         return D;
-//     }
-//
-// public:
-//     MyClass(Rcpp::NumericVector x_) : x(x_.begin(), x_.size(), 1) {
-//         m = makeM(x);
-//     }
-//
-//     void updateX(double xnew, int j) {
-//         x(j, 0) = xnew;
-//     }
-//
-//     NumericMatrix getX() {
-//         return wrap(x);
-//     }
-//
-//     NumericMatrix getM() {
-//         return wrap(m);
-//     }
-// };
-//
-//
-// // [[Rcpp::export]]
-// Rcpp::List test_my_class(Rcpp::NumericVector x) {
-//     MyClass obj(x);
-//
-//     List l(4);
-//     l[0] = obj.getX();
-//     l[1] = obj.getM();
-//
-//     obj.updateX(5.0, 0);
-//
-//     l[2] = obj.getX();
-//     l[3] = obj.getM();
-//
-//     return l;
-// }
-//
-
-
-
-// old birth and imm methods
-// void birth(int i) {
-//     // sample the individual that gives birth
-//     int iborn = sample(localSpp.size(), 1)[0] - 1;
-//
-//     // update local comm with spp ID of individual that gave birth
-//     localSpp[i] = localSpp[iborn];
-// }
-//
-// void immigration(int i) {
-//     // sample the spp ID of the immigrating individual
-//     int inew = sample(metaAbund.size(), 1, false, metaAbund)[0] - 1;
-//
-//     // update local comm with spp ID of immigrant
-//     localSpp[i] = inew;
-// }
-
-//
-// class allIn {
-// private:
-//     imat edge;
-//     int sMax;
-//
-// public:
-//     allIn(imat edge, int sMax) : edge(edge), sMax(sMax) {}
-//
-//     void speciation() {
-//         uvec i = find(edge.col(1) < sMax) + edge.n_rows;
-//         edge(i) += 100;
-//
-//         sMax++;
-//     }
-//
-//     IntegerMatrix getEdge() {
-//         return wrap(edge);
-//     }
-//
-//     int getS() {
-//         return sMax;
-//     }
-// };
-//
-//
-//
-// // [[Rcpp::export]]
-// List testAllIn(S4 x) {
-//     x = clone(x);
-//
-//     imat e = as<imat>(x.slot("e"));
-//     int s = as<int>(x.slot("n"));
-//
-//     allIn obj = allIn(e, s);
-//
-//     obj.speciation();
-//
-//     List l = List::create(Named("e") = obj.getEdge(),
-//                           Named("s") = obj.getS());
-//
-//     return l;
-// }
-//
-//
-// void specFun(imat& edge, int& sMax) {
-//     uvec i = find(edge.col(1) < sMax) + edge.n_rows;
-//     edge(i) += 100;
-//
-//     sMax++;
-// }
-//
-//
-// class allOut {
-// private:
-//     imat edge;
-//     int sMax;
-//
-// public:
-//     allOut(imat edge, int sMax) : edge(edge), sMax(sMax) {}
-//
-//     void speciation() {
-//         specFun(edge, sMax);
-//     }
-//
-//     IntegerMatrix getEdge() {
-//         return wrap(edge);
-//     }
-//
-//     int getS() {
-//         return sMax;
-//     }
-// };
-//
-//
-//
-// // [[Rcpp::export]]
-// List testAllOut(S4 x) {
-//     x = clone(x);
-//
-//     imat e = as<imat>(x.slot("e"));
-//     int s = as<int>(x.slot("n"));
-//
-//     allOut obj = allOut(e, s);
-//
-//     obj.speciation();
-//
-//     List l = List::create(Named("e") = obj.getEdge(),
-//                           Named("s") = obj.getS());
-//
-//     return l;
-// }
+    return l;
+}
