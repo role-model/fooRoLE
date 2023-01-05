@@ -44,3 +44,16 @@ BigOlTester(foo)
 
 maybe <- simOO(foo)
 
+
+# testing the right way to index armadillo matrices for phylo updating
+
+# also testing passing args by reference for updating
+# take home: we should pass by reference for updating phylo!
+
+foo@phylo@n
+foo@phylo@e
+testAllIn(foo@phylo)
+foo@phylo@n
+foo@phylo@e
+
+testAllOut(foo@phylo)
